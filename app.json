@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "NaturApp",
+    "slug": "naturapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A5276"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.naturapp.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A5276"
+      },
+      "package": "com.naturapp.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": true,
+          "useSQLCipher": false
+        }
+      ]
+    ],
+    "scheme": "naturapp",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
