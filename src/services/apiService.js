@@ -1,163 +1,93 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import StorageService from './storageService';
-import { MOCK_PRODUCTS, MOCK_CATEGORIES } from './mockData';
+// src/services/apiService.js
+// Módulo centralizado de comunicación con el backend (Sesión 11).
+//
+// BASE_URL: ajusta según dónde corras la app:
+//   - Web / emulador en la misma PC:      http://localhost:9090/api
+//   - Emulador Android (AVD):             http://10.0.2.2:9090/api
+//   - Dispositivo físico (Expo Go):       http://<IP-LAN-de-tu-PC>:9090/api
+const BASE_URL = 'http://localhost:9090/api';
 
-// ============================================
-// PERSISTENCIA REMOTA - API REST
-// ============================================
-// USE_MOCK = true  → la app funciona SIN backend, con datos de ejemplo
-//                    locales (demo autónoma, ideal para web).
-// USE_MOCK = false → usa el backend Express real en BASE_URL.
-// Cambia el flag cuando tengas el servidor corriendo.
-const USE_MOCK = true;
+let authToken = null;
 
-const BASE_URL = 'http://192.168.1.100:9090/api';
-const ORDERS_KEY = '@naturapp_orders';
+export const setToken = (token) => {
+  authToken = token;
+};
+export const clearToken = () => {
+  authToken = null;
+};
 
-// Simula la latencia de una petición de red
-const delay = (ms = 250) => new Promise(resolve => setTimeout(resolve, ms));
+// ── Función genérica de solicitud HTTP ──
+const request = async (endpoint, options = {}) => {
+  const url = `${BASE_URL}${endpoint}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(authToken && { Authorization: `Bearer ${authToken}` }),
+    ...options.headers,
+  };
 
-async function request(endpoint, options = {}) {
   try {
-    const token = await StorageService.getToken();
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
+    const response = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
-        ...options.headers,
-      },
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
     });
+
+    const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error(`API Error [${endpoint}]:`, error);
-    throw error;
-  }
-}
-
-// ============================================
-// IMPLEMENTACIÓN MOCK (sin backend)
-// ============================================
-async function readOrders() {
-  const raw = await AsyncStorage.getItem(ORDERS_KEY);
-  return raw ? JSON.parse(raw) : [];
-}
-
-const MockApi = {
-  async getProducts(category = null) {
-    await delay();
-    if (!category) return MOCK_PRODUCTS;
-    return MOCK_PRODUCTS.filter(p => p.category === category);
-  },
-
-  async getProductById(id) {
-    await delay();
-    const product = MOCK_PRODUCTS.find(p => p.id === String(id));
-    if (!product) throw new Error('Producto no encontrado');
-    return product;
-  },
-
-  async searchProducts(query) {
-    await delay();
-    const q = query.toLowerCase();
-    return MOCK_PRODUCTS.filter(p => p.name.toLowerCase().includes(q));
-  },
-
-  async createOrder(orderData) {
-    await delay();
-    const orders = await readOrders();
-    const order = {
-      id: Date.now(),
-      ...orderData,
-      status: 'pendiente',
-      date: new Date().toISOString(),
-    };
-    orders.unshift(order);
-    await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-    return order;
-  },
-
-  async getOrders() {
-    await delay();
-    return readOrders();
-  },
-
-  async getOrderById(id) {
-    await delay();
-    const orders = await readOrders();
-    const order = orders.find(o => String(o.id) === String(id));
-    if (!order) throw new Error('Pedido no encontrado');
-    return order;
-  },
-
-  async login(email) {
-    await delay();
-    return {
-      token: 'mock-token',
-      user: { name: 'Usuario Demo', email },
-    };
-  },
-
-  async getCategories() {
-    await delay();
-    return MOCK_CATEGORIES;
-  },
-};
-
-// ============================================
-// IMPLEMENTACIÓN REAL (backend Express)
-// ============================================
-const RealApi = {
-  async getProducts(category = null) {
-    const query = category ? `?category=${category}` : '';
-    return await request(`/products${query}`);
-  },
-
-  async getProductById(id) {
-    return await request(`/products/${id}`);
-  },
-
-  async searchProducts(query) {
-    return await request(`/products/search?q=${encodeURIComponent(query)}`);
-  },
-
-  async createOrder(orderData) {
-    return await request('/orders', {
-      method: 'POST',
-      body: JSON.stringify(orderData),
-    });
-  },
-
-  async getOrders() {
-    return await request('/orders');
-  },
-
-  async getOrderById(id) {
-    return await request(`/orders/${id}`);
-  },
-
-  async login(email, password) {
-    const data = await request('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    if (data.token) {
-      await StorageService.saveToken(data.token);
-      await StorageService.saveUserProfile(data.user.name, data.user.email);
+      throw new Error(data.message || `Error HTTP ${response.status}`);
     }
     return data;
-  },
-
-  async getCategories() {
-    return await request('/categories');
-  },
+  } catch (error) {
+    if (error.name === 'TypeError') {
+      throw new Error('Error de conexión con el servidor');
+    }
+    throw error;
+  }
 };
 
-const ApiService = USE_MOCK ? MockApi : RealApi;
+// ── Módulo de Productos ──
+export const ProductAPI = {
+  getAll: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/products?${query}`);
+  },
+  getById: (id) => request(`/products/${id}`),
+  search: (term) => request(`/products?search=${encodeURIComponent(term)}`),
+};
 
-export default ApiService;
+// ── Módulo de Categorías ──
+export const CategoryAPI = {
+  getAll: () => request('/categories'),
+};
+
+// ── Módulo de Autenticación ──
+export const AuthAPI = {
+  login: (email, password) =>
+    request('/users/login', { method: 'POST', body: { email, password } }),
+  register: (userData) =>
+    request('/users/register', { method: 'POST', body: userData }),
+  getProfile: () => request('/users/profile'),
+  updateProfile: (data) =>
+    request('/users/profile', { method: 'PUT', body: data }),
+};
+
+// ── Módulo de Carrito ──
+export const CartAPI = {
+  get: () => request('/cart'),
+  addItem: (item) => request('/cart/add', { method: 'POST', body: item }),
+  updateQuantity: (productId, quantity) =>
+    request(`/cart/${productId}`, { method: 'PUT', body: { quantity } }),
+  removeItem: (productId) =>
+    request(`/cart/${productId}`, { method: 'DELETE' }),
+  clear: () => request('/cart', { method: 'DELETE' }),
+};
+
+// ── Módulo de Pedidos ──
+export const OrderAPI = {
+  create: (orderData) =>
+    request('/orders', { method: 'POST', body: orderData }),
+  getAll: () => request('/orders'),
+  getById: (id) => request(`/orders/${id}`),
+  cancel: (id) => request(`/orders/${id}/cancel`, { method: 'PUT' }),
+};

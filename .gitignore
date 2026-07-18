@@ -1,4 +1,9 @@
+# Carpetas
 guide/
 node_modules/
 .claude/
 .expo/
+
+# Archivos
+*.env
+*.env.example

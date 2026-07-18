@@ -1,111 +1,87 @@
-import React from 'react';
+// app/(tabs)/home.js
 import {
   View,
-  Text,
   FlatList,
-  TextInput,
-  StyleSheet,
   ActivityIndicator,
-  ScrollView,
+  StyleSheet,
   RefreshControl,
+  Text,
 } from 'react-native';
-import { useProducts } from '../../src/viewmodels/useProducts';
-import { useCart } from '../../src/viewmodels/useCart';
+import { useProducts } from '../../src/hooks/useProducts';
+import { useCart } from '../../src/hooks/useCart';
 import ProductCard from '../../src/components/ProductCard';
-import CategoryChip from '../../src/components/CategoryChip';
-
-const CATEGORIES = ['todos', 'superfoods', 'aceites', 'capsulas', 'infusiones', 'miel'];
+import CategoryChips from '../../src/components/CategoryChips';
 
 export default function HomeScreen() {
   const {
     products,
+    categories,
+    selectedCategory,
     loading,
+    refreshing,
     error,
-    category,
-    setCategory,
-    searchQuery,
-    setSearchQuery,
-    search,
+    hasMore,
+    filterByCategory,
+    loadMore,
     refresh,
   } = useProducts();
   const { addItem } = useCart();
 
-  const handleAddToCart = async (product) => {
-    try {
-      await addItem(product);
-      alert(`${product.name} agregado al carrito`);
-    } catch (e) {
-      alert(e.message);
-    }
-  };
+  // Spinner de carga inicial
+  if (loading && products.length === 0) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#1A5276" />
+        <Text style={styles.loadingText}>Cargando productos...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <TextInput
-        style={styles.searchBar}
-        placeholder="Buscar productos naturales..."
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        onSubmitEditing={() => search(searchQuery)}
+      <CategoryChips
+        categories={categories}
+        selected={selectedCategory}
+        onSelect={filterByCategory}
       />
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categories}
-      >
-        {CATEGORIES.map(cat => (
-          <CategoryChip
-            key={cat}
-            label={cat}
-            active={category === cat}
-            onPress={() => setCategory(cat)}
+      <FlatList
+        data={products}
+        keyExtractor={(item) => item._id}
+        numColumns={2}
+        contentContainerStyle={styles.list}
+        renderItem={({ item }) => (
+          <ProductCard product={item} onAddToCart={() => addItem(item)} />
+        )}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            colors={['#1A5276']}
           />
-        ))}
-      </ScrollView>
-
-      {loading ? (
-        <ActivityIndicator size="large" color="#148F77" style={styles.loader} />
-      ) : error ? (
-        <Text style={styles.error}>{error}</Text>
-      ) : (
-        <FlatList
-          data={products}
-          numColumns={2}
-          keyExtractor={item => item.id.toString()}
-          renderItem={({ item }) => (
-            <ProductCard
-              product={item}
-              onAddToCart={() => handleAddToCart(item)}
-            />
-          )}
-          refreshControl={
-            <RefreshControl refreshing={loading} onRefresh={refresh} />
-          }
-          ListEmptyComponent={
-            <Text style={styles.empty}>No hay productos disponibles</Text>
-          }
-          contentContainerStyle={styles.list}
-        />
-      )}
+        }
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          hasMore ? (
+            <ActivityIndicator style={styles.footer} color="#1A5276" />
+          ) : null
+        }
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {error ? error : 'No se encontraron productos'}
+          </Text>
+        }
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5', padding: 12 },
-  searchBar: {
-    backgroundColor: '#FFF',
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  categories: { marginBottom: 10, maxHeight: 44 },
-  loader: { marginTop: 60 },
-  error: { color: '#E74C3C', textAlign: 'center', marginTop: 40, fontSize: 16 },
-  empty: { textAlign: 'center', marginTop: 60, fontSize: 15, color: '#999' },
-  list: { paddingBottom: 16 },
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, color: '#7F8C8D', fontSize: 14 },
+  list: { padding: 8 },
+  footer: { paddingVertical: 20 },
+  empty: { textAlign: 'center', marginTop: 40, color: '#95A5A6', fontSize: 16 },
 });

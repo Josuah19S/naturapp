@@ -1,111 +1,108 @@
-import React, { useState, useEffect } from 'react';
+// app/product/[id].js
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
   Image,
   ScrollView,
   TouchableOpacity,
-  StyleSheet,
   ActivityIndicator,
+  StyleSheet,
   Alert,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import ApiService from '../../src/services/apiService';
-import DatabaseService from '../../src/services/databaseService';
-import { Product } from '../../src/models/Product';
-import { useCart } from '../../src/viewmodels/useCart';
+import { ProductAPI } from '../../src/services/apiService';
+import { useCart } from '../../src/hooks/useCart';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isFavorite, setIsFavorite] = useState(false);
   const { addItem } = useCart();
 
+  // Consumo del endpoint GET /products/:id
   useEffect(() => {
-    const load = async () => {
+    const fetchProduct = async () => {
       try {
-        const data = await ApiService.getProductById(id);
-        setProduct(Product.fromJSON(data));
-        const fav = await DatabaseService.isFavorite(id);
-        setIsFavorite(fav);
-      } catch {
-        Alert.alert('Error', 'No se pudo cargar el producto');
+        const res = await ProductAPI.getById(id);
+        setProduct(res.data);
+      } catch (err) {
+        Alert.alert('Error', err.message);
       } finally {
         setLoading(false);
       }
     };
-    load();
+    fetchProduct();
   }, [id]);
-
-  const handleToggleFavorite = async () => {
-    if (isFavorite) {
-      await DatabaseService.removeFavorite(product.id);
-    } else {
-      await DatabaseService.addFavorite(product);
-    }
-    setIsFavorite(!isFavorite);
-  };
-
-  const handleAddToCart = async () => {
-    try {
-      await addItem(product);
-      Alert.alert('Agregado', `${product.name} se agregó al carrito.`);
-    } catch (e) {
-      Alert.alert('Error', e.message);
-    }
-  };
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#148F77" />
+        <ActivityIndicator size="large" color="#1A5276" />
       </View>
     );
   }
 
-  if (!product) return null;
+  if (!product) {
+    return (
+      <View style={styles.center}>
+        <Ionicons name="alert-circle" size={48} color="#E74C3C" />
+        <Text style={styles.errorText}>Producto no encontrado</Text>
+      </View>
+    );
+  }
+
+  const handleAddToCart = async () => {
+    try {
+      await addItem(product);
+      Alert.alert('Agregado', `${product.name} agregado al carrito`);
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    }
+  };
 
   return (
     <ScrollView style={styles.container}>
       <Image source={{ uri: product.image }} style={styles.image} />
-
-      <View style={styles.body}>
-        <View style={styles.headerRow}>
-          <Text style={styles.name}>{product.name}</Text>
-          <TouchableOpacity onPress={handleToggleFavorite}>
-            <Text style={styles.heart}>{isFavorite ? '❤️' : '🤍'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.category}>{product.category}</Text>
-        <Text style={styles.price}>{product.getFormattedPrice()}</Text>
-
-        <Text style={styles.sectionTitle}>Descripción</Text>
+      <View style={styles.content}>
+        <Text style={styles.category}>{product.category?.name}</Text>
+        <Text style={styles.name}>{product.name}</Text>
+        <Text style={styles.price}>S/ {product.price.toFixed(2)}</Text>
         <Text style={styles.description}>{product.description}</Text>
 
-        {product.benefits.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Beneficios</Text>
-            {product.benefits.map((b, i) => (
-              <Text key={i} style={styles.benefit}>• {b}</Text>
-            ))}
-          </>
+        {product.nutritionalInfo && (
+          <View style={styles.nutritionBox}>
+            <Text style={styles.nutritionTitle}>Información Nutricional</Text>
+            <Text>Calorías: {product.nutritionalInfo.calories}</Text>
+            <Text>Proteína: {product.nutritionalInfo.protein}</Text>
+            <Text>Fibra: {product.nutritionalInfo.fiber}</Text>
+          </View>
         )}
 
         <View style={styles.stockRow}>
-          <Text style={styles.stockLabel}>Stock disponible:</Text>
-          <Text style={[styles.stockValue, !product.isAvailable() && styles.outOfStock]}>
-            {product.isAvailable() ? `${product.stock} unidades` : 'Sin stock'}
+          <Ionicons
+            name={product.stock > 0 ? 'checkmark-circle' : 'close-circle'}
+            size={20}
+            color={product.stock > 0 ? '#148F77' : '#E74C3C'}
+          />
+          <Text
+            style={[
+              styles.stock,
+              { color: product.stock > 0 ? '#148F77' : '#E74C3C' },
+            ]}
+          >
+            {product.stock > 0 ? `${product.stock} disponibles` : 'Agotado'}
           </Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.addBtn, !product.isAvailable() && styles.addBtnDisabled]}
+          style={[styles.addButton, !product.stock && styles.disabledButton]}
           onPress={handleAddToCart}
-          disabled={!product.isAvailable()}
+          disabled={!product.stock}
         >
-          <Text style={styles.addBtnText}>Agregar al Carrito</Text>
+          <Ionicons name="cart" size={22} color="#FFF" />
+          <Text style={styles.addButtonText}>Agregar al Carrito</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -115,47 +112,41 @@ export default function ProductDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  image: { width: '100%', height: 280 },
-  body: { padding: 20 },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  name: { fontSize: 22, fontWeight: 'bold', color: '#1A5276', flex: 1, marginRight: 10 },
-  heart: { fontSize: 26 },
+  image: { width: '100%', height: 300, backgroundColor: '#ECF0F1' },
+  content: { padding: 20 },
   category: {
     fontSize: 13,
-    color: '#888',
-    textTransform: 'capitalize',
-    marginTop: 4,
-    marginBottom: 8,
+    color: '#148F77',
+    textTransform: 'uppercase',
+    fontWeight: '600',
   },
-  price: { fontSize: 26, fontWeight: 'bold', color: '#148F77', marginBottom: 16 },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1A5276',
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  description: { fontSize: 14, color: '#555', lineHeight: 22 },
-  benefit: { fontSize: 14, color: '#444', marginBottom: 4, lineHeight: 20 },
-  stockRow: {
-    flexDirection: 'row',
+  name: { fontSize: 24, fontWeight: 'bold', color: '#1C2833', marginTop: 8 },
+  price: { fontSize: 28, fontWeight: 'bold', color: '#1A5276', marginTop: 8 },
+  description: { fontSize: 15, color: '#566573', marginTop: 16, lineHeight: 22 },
+  nutritionBox: {
     marginTop: 16,
-    marginBottom: 20,
-    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#E8F8F5',
+    borderRadius: 8,
   },
-  stockLabel: { fontSize: 14, color: '#555' },
-  stockValue: { fontSize: 14, fontWeight: '600', color: '#27AE60', marginLeft: 6 },
-  outOfStock: { color: '#E74C3C' },
-  addBtn: {
+  nutritionTitle: { fontWeight: 'bold', marginBottom: 8, color: '#148F77' },
+  stockRow: { flexDirection: 'row', alignItems: 'center', marginTop: 16 },
+  stock: { marginLeft: 8, fontSize: 14 },
+  addButton: {
+    flexDirection: 'row',
     backgroundColor: '#148F77',
-    borderRadius: 12,
     padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
   },
-  addBtnDisabled: { backgroundColor: '#BDC3C7' },
-  addBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  disabledButton: { backgroundColor: '#BDC3C7' },
+  addButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  errorText: { marginTop: 12, color: '#E74C3C', fontSize: 16 },
 });
