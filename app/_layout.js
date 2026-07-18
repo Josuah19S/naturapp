@@ -3,10 +3,11 @@ import { Stack } from 'expo-router';
 import DatabaseService from '../src/services/databaseService';
 
 export default function RootLayout() {
+  // Inicializar almacenamiento local (AsyncStorage) al arrancar la app
   useEffect(() => {
     DatabaseService.init()
-      .then(() => console.log('DB lista'))
-      .catch(err => console.error('Error DB:', err));
+      .then(() => console.log('Almacenamiento local listo'))
+      .catch(err => console.error('Error almacenamiento:', err));
   }, []);
 
   return (

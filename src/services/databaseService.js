@@ -1,107 +1,146 @@
-import * as SQLite from 'expo-sqlite';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-let db = null;
+// ============================================
+// PERSISTENCIA LOCAL ESTRUCTURADA - AsyncStorage
+// Reemplaza a expo-sqlite manteniendo la MISMA interfaz de
+// DatabaseService, para no alterar ViewModels ni pantallas.
+// Los datos (carrito, favoritos) se guardan como listas JSON
+// bajo una clave cada una y persisten offline en el dispositivo.
+// ============================================
+
+const CART_KEY = '@naturapp_cart';
+const FAVORITES_KEY = '@naturapp_favorites';
+
+// Lee una lista JSON de forma segura; ante error devuelve []
+async function readList(key) {
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch (error) {
+    console.error(`Error leyendo ${key}:`, error);
+    return [];
+  }
+}
+
+// Guarda una lista serializándola a JSON
+async function writeList(key, list) {
+  await AsyncStorage.setItem(key, JSON.stringify(list));
+}
 
 const DatabaseService = {
+  // --- INICIALIZAR almacenamiento ---
+  // AsyncStorage no requiere esquema; se asegura que las claves
+  // existan. Se conserva el método por compatibilidad de interfaz.
   async init() {
-    db = await SQLite.openDatabaseAsync('naturapp.db');
-
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS cart (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        price REAL NOT NULL,
-        image TEXT,
-        quantity INTEGER DEFAULT 1
-      );
-    `);
-
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS favorites (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        price REAL NOT NULL,
-        image TEXT,
-        added_date TEXT DEFAULT (datetime('now'))
-      );
-    `);
+    const cart = await AsyncStorage.getItem(CART_KEY);
+    if (cart === null) await writeList(CART_KEY, []);
+    const favorites = await AsyncStorage.getItem(FAVORITES_KEY);
+    if (favorites === null) await writeList(FAVORITES_KEY, []);
   },
 
+  // === OPERACIONES CRUD DEL CARRITO ===
+
+  // CREATE: Agregar producto al carrito (o incrementar cantidad)
   async addToCart(product) {
-    const result = await db.runAsync(
-      `INSERT OR REPLACE INTO cart (product_id, name, price, image, quantity)
-       VALUES (?, ?, ?, ?,
-         COALESCE((SELECT quantity + 1 FROM cart WHERE product_id = ?), 1))`,
-      [product.id, product.name, product.price, product.image, product.id]
-    );
-    return result.lastInsertRowId;
+    const cart = await readList(CART_KEY);
+    const existing = cart.find(item => item.product_id === String(product.id));
+    if (existing) {
+      existing.quantity += 1;
+      existing.id = Date.now(); // lo mueve al inicio (más reciente)
+    } else {
+      cart.push({
+        id: Date.now(),
+        product_id: String(product.id),
+        name: product.name,
+        price: product.price,
+        image: product.image,
+        quantity: 1,
+      });
+    }
+    await writeList(CART_KEY, cart);
+    return existing ? existing.id : cart[cart.length - 1].id;
   },
 
+  // READ: Obtener todos los items del carrito (más recientes primero)
   async getCartItems() {
-    const rows = await db.getAllAsync('SELECT * FROM cart ORDER BY id DESC');
-    return rows;
+    const cart = await readList(CART_KEY);
+    return cart.sort((a, b) => b.id - a.id);
   },
 
+  // UPDATE: Cambiar cantidad de un item
   async updateCartQuantity(productId, quantity) {
     if (quantity <= 0) {
       return this.removeFromCart(productId);
     }
-    await db.runAsync(
-      'UPDATE cart SET quantity = ? WHERE product_id = ?',
-      [quantity, productId]
-    );
+    const cart = await readList(CART_KEY);
+    const item = cart.find(i => i.product_id === String(productId));
+    if (item) {
+      item.quantity = quantity;
+      await writeList(CART_KEY, cart);
+    }
   },
 
+  // DELETE: Eliminar un item del carrito
   async removeFromCart(productId) {
-    await db.runAsync('DELETE FROM cart WHERE product_id = ?', [productId]);
+    const cart = await readList(CART_KEY);
+    await writeList(
+      CART_KEY,
+      cart.filter(i => i.product_id !== String(productId))
+    );
   },
 
+  // READ: Obtener total del carrito
   async getCartTotal() {
-    const result = await db.getFirstAsync(
-      'SELECT SUM(price * quantity) as total FROM cart'
-    );
-    return result?.total || 0;
+    const cart = await readList(CART_KEY);
+    return cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
   },
 
+  // DELETE: Vaciar el carrito completo
   async clearCart() {
-    await db.runAsync('DELETE FROM cart');
+    await writeList(CART_KEY, []);
   },
 
+  // READ: Contar items en el carrito
   async getCartCount() {
-    const result = await db.getFirstAsync(
-      'SELECT SUM(quantity) as count FROM cart'
-    );
-    return result?.count || 0;
+    const cart = await readList(CART_KEY);
+    return cart.reduce((sum, i) => sum + i.quantity, 0);
   },
+
+  // === OPERACIONES CRUD DE FAVORITOS ===
 
   async addFavorite(product) {
-    await db.runAsync(
-      `INSERT OR IGNORE INTO favorites (product_id, name, price, image)
-       VALUES (?, ?, ?, ?)`,
-      [product.id, product.name, product.price, product.image]
-    );
+    const favorites = await readList(FAVORITES_KEY);
+    if (!favorites.some(f => f.product_id === String(product.id))) {
+      favorites.push({
+        id: Date.now(),
+        product_id: String(product.id),
+        name: product.name,
+        price: product.price,
+        image: product.image,
+        added_date: new Date().toISOString(),
+      });
+      await writeList(FAVORITES_KEY, favorites);
+    }
   },
 
   async removeFavorite(productId) {
-    await db.runAsync(
-      'DELETE FROM favorites WHERE product_id = ?',
-      [productId]
+    const favorites = await readList(FAVORITES_KEY);
+    await writeList(
+      FAVORITES_KEY,
+      favorites.filter(f => f.product_id !== String(productId))
     );
   },
 
   async isFavorite(productId) {
-    const row = await db.getFirstAsync(
-      'SELECT id FROM favorites WHERE product_id = ?',
-      [productId]
-    );
-    return !!row;
+    const favorites = await readList(FAVORITES_KEY);
+    return favorites.some(f => f.product_id === String(productId));
   },
 
   async getFavorites() {
-    return await db.getAllAsync(
-      'SELECT * FROM favorites ORDER BY added_date DESC'
+    const favorites = await readList(FAVORITES_KEY);
+    // Ordena por fecha de agregado, más recientes primero
+    return favorites.sort((a, b) =>
+      a.added_date < b.added_date ? 1 : -1
     );
   },
 };

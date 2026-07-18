@@ -1,3 +1,4 @@
-docs/
+guide/
 node_modules/
 .claude/
+.expo/

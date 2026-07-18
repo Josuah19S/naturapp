@@ -28,14 +28,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router",
-      [
-        "expo-sqlite",
-        {
-          "enableFTS": true,
-          "useSQLCipher": false
-        }
-      ]
+      "expo-router"
     ],
     "scheme": "naturapp",
     "experiments": {
